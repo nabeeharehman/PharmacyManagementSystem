@@ -4,7 +4,7 @@ import { WireframeButton, WireframeCard } from '../components/WireframeLayout';
 import { showError, showSuccess } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
-type Step = 'details' | 'otp' | 'password' | 'done';
+type Step = 'details' | 'password' | 'done';
 const PENDING_SIGNUP_EMAIL_KEY = 'customer_signup_pending_email';
 
 export default function RegistrationScreen() {
@@ -14,7 +14,6 @@ export default function RegistrationScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,6 +31,14 @@ export default function RegistrationScreen() {
       const callbackTokenHash = queryParams.get('token_hash');
       const isAuthCallback = Boolean(callbackAccessToken || callbackCode || callbackTokenHash);
       const pendingSignupEmail = localStorage.getItem(PENDING_SIGNUP_EMAIL_KEY)?.toLowerCase() ?? '';
+
+      if (callbackCode) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(callbackCode);
+        if (exchangeError) {
+          setError(exchangeError.message);
+          return;
+        }
+      }
 
       const {
         data: { session },
@@ -69,7 +76,7 @@ export default function RegistrationScreen() {
       // Resume after a real customer signup callback. If local storage is missing
       // because the email link opened in a different tab/browser, the callback
       // session metadata is enough to continue registration.
-      if (isSignupCallback && (step === 'details' || step === 'otp')) {
+      if (isSignupCallback && step === 'details') {
         const sessionEmail = session.user.email ?? '';
         const metaName =
           typeof session.user.user_metadata?.full_name === 'string'
@@ -103,7 +110,7 @@ export default function RegistrationScreen() {
     setMessage('');
   };
 
-  const sendOtp = async () => {
+  const sendSignupLink = async () => {
     clearAlerts();
     if (!fullName.trim()) {
       setError('Full name is required.');
@@ -137,35 +144,7 @@ export default function RegistrationScreen() {
       return;
     }
 
-    setMessage('We sent a confirmation email to your email address.');
-    setStep('otp');
-  };
-
-  const verifyOtp = async () => {
-    clearAlerts();
-    if (!otp.trim()) {
-      setError('Click the link in your email to verify your address.');
-      return;
-    }
-
-    setLoading(true);
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: normalizedEmail,
-      token: otp.trim(),
-      type: 'email',
-    });
-
-    setLoading(false);
-
-    if (verifyError) {
-      setError(verifyError.message);
-      return;
-    }
-
-    setMessage('Email verified. Set your password to finish registration.');
-    setStep('password');
+    setMessage('We sent a confirmation link to your email. Open that link to continue to the password setup screen.');
   };
 
   const finishRegistration = async () => {
@@ -271,7 +250,6 @@ export default function RegistrationScreen() {
     setEmail('');
     setPhone('');
     setDateOfBirth('');
-    setOtp('');
     setPassword('');
     setConfirmPassword('');
     setStep('details');
@@ -291,7 +269,7 @@ export default function RegistrationScreen() {
             
 
             <div className="text-xs font-mono text-neutral-600">
-              Step: {step === 'details' ? '1/3 Details' : step === 'otp' ? '2/3 Verify Email' : step === 'password' ? '3/3 Set Password' : 'Completed'}
+              Step: {step === 'details' ? '1/2 Details' : step === 'password' ? '2/2 Set Password' : 'Completed'}
             </div>
 
             {step === 'details' && hasActiveSession && (
@@ -326,32 +304,11 @@ export default function RegistrationScreen() {
                   <input type="date" className={inputClassName} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
                 </Field>
                 <WireframeButton
-                  label={loading ? 'Sending authentication email...' : 'Send authentication email'}
+                  label={loading ? 'Sending confirmation link...' : 'Send confirmation link'}
                   className="w-full"
                   disabled={loading}
-                  onClick={() => void sendOtp()}
+                  onClick={() => void sendSignupLink()}
                 />
-              </div>
-            )}
-
-            {step === 'otp' && (
-              <div className="space-y-3">
-                <Field label="Email Confirmation   *">
-                  <input className={inputClassName} value={otp} onChange={(e) => setOtp(e.target.value)} />
-                </Field>
-                <div className="flex gap-3">
-                  <WireframeButton
-                    label={loading ? 'Verifying...' : 'Verify Email'}
-                    disabled={loading}
-                    onClick={() => void verifyOtp()}
-                  />
-                  <WireframeButton
-                    label={loading ? 'Resending...' : 'Resend Email'}
-                    variant="secondary"
-                    disabled={loading}
-                    onClick={() => void sendOtp()}
-                  />
-                </div>
               </div>
             )}
 
